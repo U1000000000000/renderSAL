@@ -33,8 +33,10 @@ for entry in "${service_dirs[@]}"; do
   fi
 
   if [ -f "$dir/requirements.txt" ]; then
-    echo "  -> pip install in $dir ($svc)"
-    pip install -r "$dir/requirements.txt"
+    echo "  -> Creating Python venv and installing deps in $dir ($svc)"
+    python3 -m venv "$dir/.venv"
+    "$dir/.venv/bin/pip" install --upgrade pip
+    "$dir/.venv/bin/pip" install -r "$dir/requirements.txt"
   elif [ -f "$dir/package.json" ]; then
     echo "  -> npm install in $dir ($svc)"
     (cd "$dir" && npm install --omit=dev)

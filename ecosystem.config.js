@@ -50,7 +50,7 @@ module.exports = {
       name: "lila",
       script: "main.py",
       cwd: "./lila/server",
-      interpreter: "python3",
+      interpreter: require("path").resolve("./lila/server/.venv/bin/python"),
       max_memory_restart: "100M",
       env: getServiceEnv("LILA", { PORT: 3003, NODE_ENV: "production" }),
     },
