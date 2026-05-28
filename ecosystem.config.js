@@ -36,14 +36,14 @@ module.exports = {
       name: "instacrave",
       script: "server.js",
       cwd: "./instacrave/backend",
-      max_memory_restart: "80M",
+      max_memory_restart: "120M",
       env: getServiceEnv("INSTACRAVE", { PORT: 3001, NODE_ENV: "production" }),
     },
     {
       name: "birddrop",
       script: "server.js",
       cwd: "./birddrop/backend",
-      max_memory_restart: "80M",
+      max_memory_restart: "100M",
       env: getServiceEnv("BIRDDROP", { PORT: 3002, NODE_ENV: "production" }),
     },
     {
@@ -58,14 +58,14 @@ module.exports = {
       name: "pollrabbit",
       script: "app.js",
       cwd: "./pollrabbit",
-      max_memory_restart: "80M",
+      max_memory_restart: "100M",
       env: getServiceEnv("POLLRABBIT", { PORT: 3004, NODE_ENV: "production" }),
     },
     {
       name: "cuber",
       script: "index.js",
       cwd: "./cuber",
-      max_memory_restart: "80M",
+      max_memory_restart: "100M",
       env: getServiceEnv("CUBER", { PORT: 3005, NODE_ENV: "production" }),
     },
 
@@ -74,7 +74,7 @@ module.exports = {
     //   name: "newproject",
     //   script: "index.js",
     //   cwd: "./newproject",
-    //   max_memory_restart: "80M",
+    //   max_memory_restart: "100M",
     //   env: getServiceEnv("NEWPROJECT", { PORT: 3006, NODE_ENV: "production" }),
     // },
     // ─────────────────────────────────────────────────────────────────────────

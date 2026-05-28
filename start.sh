@@ -37,6 +37,8 @@ for entry in "${service_dirs[@]}"; do
     python3 -m venv "$dir/.venv"
     "$dir/.venv/bin/pip" install --upgrade pip
     "$dir/.venv/bin/pip" install -r "$dir/requirements.txt"
+    # Install extras not covered by hashed requirements
+    "$dir/.venv/bin/pip" install email-validator
   elif [ -f "$dir/package.json" ]; then
     echo "  -> npm install in $dir ($svc)"
     (cd "$dir" && npm install --omit=dev)
