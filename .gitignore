@@ -1,0 +1,14 @@
+# Environment variables (contains secrets!)
+.env
+.env.*
+!.env.example
+
+# Node
+node_modules/
+
+# PM2
+.pm2/
+
+# OS
+.DS_Store
+Thumbs.db
