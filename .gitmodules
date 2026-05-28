@@ -1,0 +1,15 @@
+[submodule "instacrave"]
+	path = instacrave
+	url = https://github.com/U1000000000000/instacrave
+[submodule "birddrop"]
+	path = birddrop
+	url = https://github.com/u1000000000000/birddrop
+[submodule "lila"]
+	path = lila
+	url = https://github.com/u1000000000000/lila
+[submodule "pollrabbit"]
+	path = pollrabbit
+	url = https://github.com/u1000000000000/pollrabbit
+[submodule "cuber"]
+	path = cuber
+	url = https://github.com/u1000000000000/cuber

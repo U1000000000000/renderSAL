@@ -1,0 +1,54 @@
+# Put this file in each of your 5 individual repos at:
+# .github/workflows/update-wrapper.yml
+#
+# It fires every time you push to main, goes into the wrapper repo,
+# updates the submodule pointer for THIS repo, and pushes — which
+# triggers a Render redeploy automatically.
+#
+# SETUP REQUIRED:
+# 1. In your wrapper repo → Settings → Actions → Runners → make sure Actions are enabled
+# 2. Generate a GitHub Personal Access Token (PAT) with repo scope:
+#    GitHub → Settings → Developer settings → Personal access tokens → Fine-grained
+#    Give it read+write access to the render-wrapper repo contents
+# 3. In THIS individual repo → Settings → Secrets → Actions → New secret:
+#    Name:  WRAPPER_REPO_PAT
+#    Value: your PAT from step 2
+# 4. Change WRAPPER_REPO below to your actual GitHub username/render-wrapper repo name
+# 5. Change SUBMODULE_PATH to the folder name this repo maps to in the wrapper
+
+name: Update render-wrapper submodule
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  WRAPPER_REPO: your-github-username/render-wrapper   # ← CHANGE THIS
+  SUBMODULE_PATH: instacrave                           # ← CHANGE THIS per repo
+
+jobs:
+  update-submodule:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout wrapper repo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.WRAPPER_REPO }}
+          token: ${{ secrets.WRAPPER_REPO_PAT }}
+          submodules: true
+
+      - name: Update submodule to latest commit
+        run: |
+          git submodule update --remote ${{ env.SUBMODULE_PATH }}
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add ${{ env.SUBMODULE_PATH }}
+          git diff --staged --quiet || git commit -m "chore: update ${{ env.SUBMODULE_PATH }} submodule"
+
+      - name: Push to wrapper repo
+        uses: ad-m/github-push-action@v0.8.0
+        with:
+          github_token: ${{ secrets.WRAPPER_REPO_PAT }}
+          repository: ${{ env.WRAPPER_REPO }}
+          branch: main
