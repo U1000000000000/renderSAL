@@ -46,9 +46,12 @@ const proxyMiddlewares = [];
 
 for (const svc of services) {
   const proxy = createProxyMiddleware({
-    target: `http://localhost:${svc.port}`,
+    target: `http://127.0.0.1:${svc.port}`,
     changeOrigin: true,
-    pathRewrite: { [`^${svc.path}`]: "" },
+    pathRewrite: (path, req) => {
+      const newPath = path.replace(new RegExp(`^${svc.path}`), "");
+      return newPath === "" ? "/" : newPath;
+    },
     // WebSocket support — BirdDrop and Lila need this
     ws: true,
     on: {
