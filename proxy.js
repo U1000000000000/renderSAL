@@ -1,4 +1,5 @@
 const express = require("express");
+const http = require("http");
 const { createProxyMiddleware } = require("http-proxy-middleware");
 
 const app = express();
@@ -40,29 +41,47 @@ const services = [
   // ───────────────────────────────────────────────────────────────────────────
 ];
 
+// Keep references to proxy middlewares for WebSocket upgrade handling
+const proxyMiddlewares = [];
+
 for (const svc of services) {
-  app.use(
-    svc.path,
-    createProxyMiddleware({
-      target: `http://localhost:${svc.port}`,
-      changeOrigin: true,
-      pathRewrite: { [`^${svc.path}`]: "" },
-      // WebSocket support — BirdDrop needs this
-      ws: true,
-      on: {
-        error: (err, req, res) => {
-          console.error(`[proxy] ${svc.path} error:`, err.message);
-          if (res.writeHead) {
-            res.writeHead(502);
-            res.end(`Service ${svc.path} is unavailable`);
-          }
-        },
+  const proxy = createProxyMiddleware({
+    target: `http://localhost:${svc.port}`,
+    changeOrigin: true,
+    pathRewrite: { [`^${svc.path}`]: "" },
+    // WebSocket support — BirdDrop and Lila need this
+    ws: true,
+    on: {
+      error: (err, req, res) => {
+        console.error(`[proxy] ${svc.path} error:`, err.message);
+        if (res.writeHead) {
+          res.writeHead(502);
+          res.end(`Service ${svc.path} is unavailable`);
+        }
       },
-    })
-  );
+    },
+  });
+
+  app.use(svc.path, proxy);
+  proxyMiddlewares.push({ path: svc.path, proxy });
 }
 
 // ─── Start ────────────────────────────────────────────────────────────────────
-app.listen(PORT, "0.0.0.0", () => {
+// Use http.createServer so we can manually handle WebSocket upgrade events.
+// Express's app.listen() doesn't expose the raw 'upgrade' event to
+// http-proxy-middleware, so WebSocket connections would fail silently.
+const server = http.createServer(app);
+
+server.on("upgrade", (req, socket, head) => {
+  // Find which service this WebSocket upgrade belongs to
+  const match = proxyMiddlewares.find((m) => req.url.startsWith(m.path));
+  if (match) {
+    match.proxy.upgrade(req, socket, head);
+  } else {
+    socket.destroy();
+  }
+});
+
+server.listen(PORT, "0.0.0.0", () => {
   console.log(`Proxy listening on port ${PORT}`);
 });
