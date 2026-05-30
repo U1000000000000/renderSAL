@@ -5,6 +5,12 @@ const { createProxyMiddleware } = require("http-proxy-middleware");
 const app = express();
 const PORT = process.env.PORT || 10000;
 
+// ─── Request Logging ───────────────────────────────────────────────────────────
+app.use((req, res, next) => {
+  console.log(`[proxy] HTTP REQ: ${req.method} ${req.url} - Headers: ${JSON.stringify(req.headers)}`);
+  next();
+});
+
 // ─── Health check (UptimeRobot pings this) ───────────────────────────────────
 app.get("/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
@@ -66,6 +72,11 @@ for (const svc of services) {
   app.use(svc.path, proxy);
   proxyMiddlewares.push({ path: svc.path, proxy });
 }
+
+// Catch-all to see what is slipping past the proxies
+app.use((req, res) => {
+  res.status(404).send(`PROXY CATCH-ALL: Cannot ${req.method} ${req.url}`);
+});
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 // Use http.createServer so we can manually handle WebSocket upgrade events.
