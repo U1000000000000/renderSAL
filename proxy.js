@@ -54,14 +54,12 @@ for (const svc of services) {
     },
     // WebSocket support — BirdDrop and Lila need this
     ws: true,
-    on: {
-      error: (err, req, res) => {
-        console.error(`[proxy] ${svc.path} error:`, err.message);
-        if (res.writeHead) {
-          res.writeHead(502);
-          res.end(`Service ${svc.path} is unavailable`);
-        }
-      },
+    onError: (err, req, res) => {
+      console.error(`[proxy] ${svc.path} error:`, err.message);
+      if (res.writeHead) {
+        res.writeHead(502);
+        res.end(`Service ${svc.path} is unavailable`);
+      }
     },
   });
 
