@@ -85,11 +85,22 @@ app.use((req, res) => {
 const server = http.createServer(app);
 
 server.on("upgrade", (req, socket, head) => {
-  // Find which service this WebSocket upgrade belongs to
-  const match = proxyMiddlewares.find((m) => req.url.startsWith(m.path));
-  if (match) {
-    match.proxy.upgrade(req, socket, head);
-  } else {
+  console.log(`[proxy] WS UPGRADE ATTEMPT: ${req.url}`);
+  try {
+    const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+    const pathname = url.pathname;
+    
+    // Find which service this WebSocket upgrade belongs to
+    const match = proxyMiddlewares.find((m) => pathname.startsWith(m.path));
+    if (match) {
+      console.log(`[proxy] Match found for WS upgrade: ${match.path}`);
+      match.proxy.upgrade(req, socket, head);
+    } else {
+      console.log(`[proxy] No match for WS upgrade: ${req.url}, destroying socket`);
+      socket.destroy();
+    }
+  } catch (err) {
+    console.error(`[proxy] URL parsing error for WS upgrade:`, err);
     socket.destroy();
   }
 });
