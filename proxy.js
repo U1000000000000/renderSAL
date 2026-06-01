@@ -1,6 +1,6 @@
 const express = require("express");
 const http = require("http");
-const { createProxyMiddleware } = require("http-proxy-middleware");
+const { createProxyMiddleware, responseInterceptor } = require("http-proxy-middleware");
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -23,9 +23,9 @@ app.get("/", (req, res) => {
     services: [
       { name: "instacrave", path: "/instacrave" },
       { name: "birddrop",   path: "/birddrop"   },
-      { name: "lila",   path: "/lila"   },
-      { name: "pollrabbit",   path: "/pollrabbit"   },
-      { name: "cuber",   path: "/cuber"   },
+      { name: "lila",       path: "/lila"       },
+      { name: "pollrabbit", path: "/pollrabbit" },
+      { name: "cuber",      path: "/cuber"      },
     ],
   });
 });
@@ -41,10 +41,6 @@ const services = [
   { path: "/lila",       port: 3003 },
   { path: "/pollrabbit", port: 3004 },
   { path: "/cuber",      port: 3005 },
-
-  // ─── ADD NEW PROJECTS HERE ─────────────────────────────────────────────────
-  // { path: "/newproject", port: 3006 },
-  // ───────────────────────────────────────────────────────────────────────────
 ];
 
 // Keep references to proxy middlewares for WebSocket upgrade handling
@@ -60,6 +56,37 @@ for (const svc of services) {
     },
     // WebSocket support — BirdDrop and Lila need this
     ws: true,
+    selfHandleResponse: true,
+    onProxyRes: responseInterceptor(async (responseBuffer, proxyRes, req, res) => {
+      // 1. Intercept and rewrite redirects (e.g. res.redirect('/login') -> /pollrabbit/login)
+      if (proxyRes.headers.location && proxyRes.headers.location.startsWith('/')) {
+        res.setHeader('location', svc.path + proxyRes.headers.location);
+      }
+      
+      // 2. Intercept and rewrite HTML/JS bodies to fix absolute paths
+      const contentType = proxyRes.headers['content-type'];
+      if (contentType && (contentType.includes('text/html') || contentType.includes('application/javascript'))) {
+        let response = responseBuffer.toString('utf8');
+        
+        // Rewrite href="/...", src="/...", action="/..."
+        const regexAttr = /(href|src|action)=["']\/([^"']*)["']/g;
+        response = response.replace(regexAttr, (match, attr, path) => {
+          // Don't rewrite if it's already prefixed
+          if (path.startsWith(svc.path.substring(1))) return match;
+          return `${attr}="${svc.path}/${path}"`;
+        });
+        
+        // Rewrite fetch("/...") and redirect: "/..." in JS
+        const regexJs = /(fetch\(|redirect:\s*)["']\/([^"']*)["']/g;
+        response = response.replace(regexJs, (match, prefix, path) => {
+          if (path.startsWith(svc.path.substring(1))) return match;
+          return `${prefix}"${svc.path}/${path}"`;
+        });
+        
+        return response;
+      }
+      return responseBuffer;
+    }),
     onError: (err, req, res) => {
       console.error(`[proxy] ${svc.path} error:`, err.message);
       if (res.writeHead) {
