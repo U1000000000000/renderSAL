@@ -56,15 +56,19 @@ for (const svc of services) {
     },
     // WebSocket support — BirdDrop and Lila need this
     ws: true,
-    selfHandleResponse: true,
+    selfHandleResponse: svc.path === "/pollrabbit",
     onProxyReq: (proxyReq, req, res) => {
+      if (svc.path === "/pollrabbit") {
       // Force backend to return uncompressed & un-cached responses 
       // so our responseInterceptor can safely decode and rewrite them.
       proxyReq.removeHeader('accept-encoding');
       proxyReq.removeHeader('if-none-match');
       proxyReq.removeHeader('if-modified-since');
+      }
     },
     onProxyRes: responseInterceptor(async (responseBuffer, proxyRes, req, res) => {
+      if (svc.path !== "/pollrabbit") return responseBuffer;
+      
       // 1. Intercept and rewrite redirects (e.g. res.redirect('/login') -> /pollrabbit/login)
       if (proxyRes.headers.location && proxyRes.headers.location.startsWith('/')) {
         res.setHeader('location', svc.path + proxyRes.headers.location);
