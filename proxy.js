@@ -76,11 +76,24 @@ for (const svc of services) {
       
       // 2. Intercept and rewrite HTML/JS bodies to fix absolute paths
       const contentType = proxyRes.headers['content-type'];
+      
+      if (contentType && contentType.includes('application/json')) {
+        let response = responseBuffer.toString('utf8');
+        try {
+          const json = JSON.parse(response);
+          if (json.redirect && json.redirect.startsWith('/')) {
+            json.redirect = `${svc.path}${json.redirect}`;
+            return Buffer.from(JSON.stringify(json));
+          }
+        } catch (e) {}
+        return responseBuffer;
+      }
+
       if (contentType && (contentType.includes('text/html') || contentType.includes('application/javascript'))) {
         let response = responseBuffer.toString('utf8');
         
-        // Rewrite href="/...", src="/...", action="/..."
-        const regexAttr = /(href|src|action)=["']\/([^"']*)["']/g;
+        // Rewrite href="/...", src="/...", action="/...", data-poll-url="/..."
+        const regexAttr = /(href|src|action|data-poll-url)=["']\/([^"']*)["']/g;
         response = response.replace(regexAttr, (match, attr, path) => {
           // Don't rewrite if it's already prefixed
           if (path.startsWith(svc.path.substring(1))) return match;
@@ -94,7 +107,7 @@ for (const svc of services) {
           return `${prefix}"${svc.path}/${path}"`;
         });
         
-        return response;
+        return Buffer.from(response);
       }
       return responseBuffer;
     }),
