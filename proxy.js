@@ -47,34 +47,35 @@ const services = [
 const proxyMiddlewares = [];
 
 for (const svc of services) {
-  const proxy = createProxyMiddleware({
+  let proxyOptions = {
     target: `http://127.0.0.1:${svc.port}`,
     changeOrigin: true,
     pathRewrite: (path, req) => {
       const newPath = path.replace(new RegExp(`^${svc.path}`), "");
       return newPath === "" ? "/" : newPath;
     },
-    // WebSocket support — BirdDrop and Lila need this
     ws: true,
-    selfHandleResponse: svc.path === "/pollrabbit",
-    onProxyReq: (proxyReq, req, res) => {
-      if (svc.path === "/pollrabbit") {
-      // Force backend to return uncompressed & un-cached responses 
-      // so our responseInterceptor can safely decode and rewrite them.
+    onError: (err, req, res) => {
+      console.error(`[proxy] ${svc.path} error:`, err.message);
+      if (res && res.writeHead) {
+        res.writeHead(502);
+        res.end(`Service ${svc.path} is unavailable`);
+      }
+    }
+  };
+
+  if (svc.path === "/pollrabbit") {
+    proxyOptions.selfHandleResponse = true;
+    proxyOptions.onProxyReq = (proxyReq, req, res) => {
       proxyReq.removeHeader('accept-encoding');
       proxyReq.removeHeader('if-none-match');
       proxyReq.removeHeader('if-modified-since');
-      }
-    },
-    onProxyRes: responseInterceptor(async (responseBuffer, proxyRes, req, res) => {
-      if (svc.path !== "/pollrabbit") return responseBuffer;
-      
-      // 1. Intercept and rewrite redirects (e.g. res.redirect('/login') -> /pollrabbit/login)
+    };
+    proxyOptions.onProxyRes = responseInterceptor(async (responseBuffer, proxyRes, req, res) => {
       if (proxyRes.headers.location && proxyRes.headers.location.startsWith('/')) {
         res.setHeader('location', svc.path + proxyRes.headers.location);
       }
       
-      // 2. Intercept and rewrite HTML/JS bodies to fix absolute paths
       const contentType = proxyRes.headers['content-type'];
       
       if (contentType && contentType.includes('application/json')) {
@@ -92,15 +93,12 @@ for (const svc of services) {
       if (contentType && (contentType.includes('text/html') || contentType.includes('application/javascript'))) {
         let response = responseBuffer.toString('utf8');
         
-        // Rewrite href="/...", src="/...", action="/...", data-poll-url="/..."
         const regexAttr = /(href|src|action|data-poll-url)=["']\/([^"']*)["']/g;
         response = response.replace(regexAttr, (match, attr, path) => {
-          // Don't rewrite if it's already prefixed
           if (path.startsWith(svc.path.substring(1))) return match;
           return `${attr}="${svc.path}/${path}"`;
         });
         
-        // Rewrite fetch("/...") and redirect: "/..." in JS
         const regexJs = /(fetch\(|redirect:\s*)["']\/([^"']*)["']/g;
         response = response.replace(regexJs, (match, prefix, path) => {
           if (path.startsWith(svc.path.substring(1))) return match;
@@ -110,16 +108,10 @@ for (const svc of services) {
         return Buffer.from(response);
       }
       return responseBuffer;
-    }),
-    onError: (err, req, res) => {
-      console.error(`[proxy] ${svc.path} error:`, err.message);
-      if (res.writeHead) {
-        res.writeHead(502);
-        res.end(`Service ${svc.path} is unavailable`);
-      }
-    },
-  });
+    });
+  }
 
+  const proxy = createProxyMiddleware(proxyOptions);
   app.use(svc.path, proxy);
   proxyMiddlewares.push({ path: svc.path, proxy });
 }
