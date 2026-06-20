@@ -30,6 +30,36 @@ app.get("/", (req, res) => {
   });
 });
 
+// ─── Socket.IO direct route (instacrave) ─────────────────────────────────────
+// Socket.IO clients connect to the origin and always send requests to /socket.io/
+// by default. This route forwards those directly to instacrave (port 3001)
+// WITHOUT path rewriting — the backend Socket.IO server expects /socket.io/.
+//
+// This MUST be registered before the generic service routes so /socket.io/
+// doesn't fall through to the catch-all 404.
+const socketIoProxy = createProxyMiddleware({
+  target: "http://127.0.0.1:3001",
+  changeOrigin: true,
+  ws: true,
+  // No pathRewrite — keep /socket.io/ as-is for the backend
+  logLevel: "warn",
+  onError: (err, req, res) => {
+    console.error("[proxy] Socket.IO proxy error:", err.message);
+    if (res && res.writeHead) {
+      res.writeHead(502);
+      res.end("Socket.IO service unavailable");
+    }
+  },
+  onProxyReqWs: (proxyReq, req, socket) => {
+    console.log(`[proxy] Socket.IO WS upgrade forwarded to instacrave`);
+    // Guard against socket errors crashing the proxy
+    socket.on("error", (err) => {
+      console.error("[proxy] Socket.IO upstream socket error:", err.message);
+    });
+  },
+});
+app.use("/socket.io", socketIoProxy);
+
 // ─── Service routes ───────────────────────────────────────────────────────────
 // Each service gets its own path prefix.
 // Requests to /instacrave/anything → forwarded to localhost:3001/anything
@@ -45,6 +75,9 @@ const services = [
 
 // Keep references to proxy middlewares for WebSocket upgrade handling
 const proxyMiddlewares = [];
+
+// Socket.IO proxy is first in the list for upgrade matching
+proxyMiddlewares.push({ path: "/socket.io", proxy: socketIoProxy });
 
 for (const svc of services) {
   let proxyOptions = {
@@ -129,23 +162,36 @@ const server = http.createServer(app);
 
 server.on("upgrade", (req, socket, head) => {
   console.log(`[proxy] WS UPGRADE ATTEMPT: ${req.url}`);
+
+  // Prevent unhandled socket errors from crashing the proxy
+  socket.on("error", (err) => {
+    console.error(`[proxy] WS socket error during upgrade:`, err.message);
+  });
+
   try {
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
     const pathname = url.pathname;
     
     // Find which service this WebSocket upgrade belongs to
+    // proxyMiddlewares is ordered: /socket.io first, then /instacrave, /birddrop, etc.
     const match = proxyMiddlewares.find((m) => pathname.startsWith(m.path));
     if (match) {
-      console.log(`[proxy] Match found for WS upgrade: ${match.path}`);
+      console.log(`[proxy] WS upgrade matched → ${match.path} (url: ${req.url})`);
       match.proxy.upgrade(req, socket, head);
     } else {
       console.log(`[proxy] No match for WS upgrade: ${req.url}, destroying socket`);
+      socket.end("HTTP/1.1 404 Not Found\r\n\r\n");
       socket.destroy();
     }
   } catch (err) {
     console.error(`[proxy] URL parsing error for WS upgrade:`, err);
     socket.destroy();
   }
+});
+
+// Guard against uncaught errors on the server
+server.on("error", (err) => {
+  console.error("[proxy] Server error:", err.message);
 });
 
 server.listen(PORT, "0.0.0.0", () => {
