@@ -52,9 +52,13 @@ const socketIoProxy = createProxyMiddleware({
   },
   onProxyReqWs: (proxyReq, req, socket) => {
     console.log(`[proxy] Socket.IO WS upgrade forwarded to instacrave`);
+    // Guard against proxyReq errors (e.g., ECONNRESET from target server) crashing the proxy
+    proxyReq.on("error", (err) => {
+      console.error("[proxy] Socket.IO proxyReq WS error:", err.message);
+    });
     // Guard against socket errors crashing the proxy
     socket.on("error", (err) => {
-      console.error("[proxy] Socket.IO upstream socket error:", err.message);
+      console.error("[proxy] Socket.IO downstream socket error:", err.message);
     });
   },
 });
@@ -94,6 +98,16 @@ for (const svc of services) {
         res.writeHead(502);
         res.end(`Service ${svc.path} is unavailable`);
       }
+    },
+    onProxyReqWs: (proxyReq, req, socket) => {
+      // Prevent unhandled proxyReq errors (like ECONNRESET) from crashing the server
+      proxyReq.on('error', (err) => {
+        console.error(`[proxy] ${svc.path} upstream WS error:`, err.message);
+      });
+      // Also catch socket errors
+      socket.on('error', (err) => {
+        console.error(`[proxy] ${svc.path} downstream WS error:`, err.message);
+      });
     }
   };
 
