@@ -48,20 +48,10 @@ const socketIoProxy = createProxyMiddleware({
     if (res && res.writeHead) {
       res.writeHead(502);
       res.end("Socket.IO service unavailable");
+    } else if (res && res.destroy) {
+      // For WebSockets, 'res' is the socket
+      res.destroy();
     }
-  },
-  onProxyReqWs: (proxyReq, req, socket) => {
-    console.log(`[proxy] Socket.IO WS upgrade forwarded to instacrave`);
-    // Guard against proxyReq errors (e.g., ECONNRESET from target server) crashing the proxy
-    proxyReq.on("error", (err) => {
-      console.error("[proxy] Socket.IO proxyReq WS error:", err.message);
-      if (!socket.destroyed) socket.destroy();
-    });
-    // Guard against socket errors crashing the proxy
-    socket.on("error", (err) => {
-      console.error("[proxy] Socket.IO downstream socket error:", err.message);
-      if (!proxyReq.destroyed) proxyReq.destroy();
-    });
   },
 });
 app.use("/socket.io", socketIoProxy);
@@ -99,20 +89,10 @@ for (const svc of services) {
       if (res && res.writeHead) {
         res.writeHead(502);
         res.end(`Service ${svc.path} is unavailable`);
+      } else if (res && res.destroy) {
+        // For WebSockets, 'res' is the socket
+        res.destroy();
       }
-    },
-    onProxyReqWs: (proxyReq, req, socket) => {
-      // Prevent unhandled proxyReq errors (like ECONNRESET) from crashing the server
-      proxyReq.on('error', (err) => {
-        console.error(`[proxy] ${svc.path} upstream WS error:`, err.message);
-        // Explicitly destroy the downstream socket so the client doesn't hang
-        if (!socket.destroyed) socket.destroy();
-      });
-      // Also catch socket errors
-      socket.on('error', (err) => {
-        console.error(`[proxy] ${svc.path} downstream WS error:`, err.message);
-        if (!proxyReq.destroyed) proxyReq.destroy();
-      });
     }
   };
 
