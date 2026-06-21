@@ -55,10 +55,12 @@ const socketIoProxy = createProxyMiddleware({
     // Guard against proxyReq errors (e.g., ECONNRESET from target server) crashing the proxy
     proxyReq.on("error", (err) => {
       console.error("[proxy] Socket.IO proxyReq WS error:", err.message);
+      if (!socket.destroyed) socket.destroy();
     });
     // Guard against socket errors crashing the proxy
     socket.on("error", (err) => {
       console.error("[proxy] Socket.IO downstream socket error:", err.message);
+      if (!proxyReq.destroyed) proxyReq.destroy();
     });
   },
 });
@@ -103,10 +105,13 @@ for (const svc of services) {
       // Prevent unhandled proxyReq errors (like ECONNRESET) from crashing the server
       proxyReq.on('error', (err) => {
         console.error(`[proxy] ${svc.path} upstream WS error:`, err.message);
+        // Explicitly destroy the downstream socket so the client doesn't hang
+        if (!socket.destroyed) socket.destroy();
       });
       // Also catch socket errors
       socket.on('error', (err) => {
         console.error(`[proxy] ${svc.path} downstream WS error:`, err.message);
+        if (!proxyReq.destroyed) proxyReq.destroy();
       });
     }
   };
