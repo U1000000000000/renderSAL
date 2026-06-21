@@ -5,9 +5,9 @@ const { createProxyMiddleware, responseInterceptor } = require("http-proxy-middl
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-// ─── Request Logging ───────────────────────────────────────────────────────────
+// ─── Request Logging (concise) ────────────────────────────────────────────────
 app.use((req, res, next) => {
-  console.log(`[proxy] HTTP REQ: ${req.method} ${req.url} - Headers: ${JSON.stringify(req.headers)}`);
+  console.log(`[proxy] ${req.method} ${req.url}`);
   next();
 });
 
@@ -180,7 +180,7 @@ app.use((req, res) => {
 const server = http.createServer(app);
 
 server.on("upgrade", (req, socket, head) => {
-  console.log(`[proxy] WS UPGRADE ATTEMPT: ${req.url}`);
+  console.log(`[proxy] WS UPGRADE: ${req.url}`);
 
   // Prevent unhandled socket errors from crashing the proxy
   socket.on("error", (err) => {
@@ -191,14 +191,23 @@ server.on("upgrade", (req, socket, head) => {
     const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
     const pathname = url.pathname;
     
-    // Find which service this WebSocket upgrade belongs to
+    // Find which service this WebSocket upgrade belongs to.
     // proxyMiddlewares is ordered: /socket.io first, then /instacrave, /birddrop, etc.
     const match = proxyMiddlewares.find((m) => pathname.startsWith(m.path));
     if (match) {
-      console.log(`[proxy] WS upgrade matched → ${match.path} (url: ${req.url})`);
+      // CRITICAL: http-proxy-middleware's upgrade() does NOT apply pathRewrite.
+      // We must manually rewrite req.url before forwarding, otherwise the
+      // backend receives the full prefixed path (e.g. /birddrop/ws instead of /ws)
+      // and the WebSocket server silently drops data or rejects the connection.
+      //
+      // Exception: /socket.io does NOT need rewriting — it maps 1:1 to the backend.
+      if (match.path !== "/socket.io") {
+        req.url = req.url.replace(new RegExp(`^${match.path}`), "") || "/";
+      }
+      console.log(`[proxy] WS upgrade → ${match.path} (rewritten url: ${req.url})`);
       match.proxy.upgrade(req, socket, head);
     } else {
-      console.log(`[proxy] No match for WS upgrade: ${req.url}, destroying socket`);
+      console.log(`[proxy] No match for WS upgrade: ${req.url}`);
       socket.end("HTTP/1.1 404 Not Found\r\n\r\n");
       socket.destroy();
     }
@@ -211,6 +220,16 @@ server.on("upgrade", (req, socket, head) => {
 // Guard against uncaught errors on the server
 server.on("error", (err) => {
   console.error("[proxy] Server error:", err.message);
+});
+
+// ─── Process-level crash protection ──────────────────────────────────────────
+// Without these, ANY unhandled error from http-proxy internals will crash the
+// entire proxy process, killing ALL active WebSocket connections for ALL services.
+process.on("uncaughtException", (err) => {
+  console.error("[proxy] UNCAUGHT EXCEPTION (kept alive):", err.message);
+});
+process.on("unhandledRejection", (reason) => {
+  console.error("[proxy] UNHANDLED REJECTION (kept alive):", reason);
 });
 
 server.listen(PORT, "0.0.0.0", () => {
