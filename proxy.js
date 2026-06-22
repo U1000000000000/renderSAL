@@ -180,6 +180,30 @@ app.get('/debug-logs', (req, res) => {
   res.json(memLogs);
 });
 
+app.get('/test-bd-backend', (req, res) => {
+  const WebSocket = require('ws');
+  const ws = new WebSocket('ws://127.0.0.1:3002/ws');
+  const messages = [];
+  
+  ws.on('open', () => {
+    ws.send(JSON.stringify({ type: 'join', sessionId: 'local-test-' + Date.now() }));
+    setTimeout(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'ping' }));
+      }
+    }, 100);
+  });
+  
+  ws.on('message', (data) => messages.push(data.toString()));
+  ws.on('error', (err) => messages.push('ERROR: ' + err.message));
+  ws.on('close', (code) => messages.push('CLOSED: ' + code));
+  
+  setTimeout(() => {
+    ws.close();
+    res.json({ messages });
+  }, 2000);
+});
+
 // Catch-all to see what is slipping past the proxies
 app.use((req, res) => {
   res.status(404).send(`PROXY CATCH-ALL: Cannot ${req.method} ${req.url}`);
