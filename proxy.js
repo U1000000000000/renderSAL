@@ -180,9 +180,9 @@ app.get('/debug-logs', (req, res) => {
   res.json(memLogs);
 });
 
-app.get('/test-bd-backend', (req, res) => {
+app.get('/test-bd-proxy', (req, res) => {
   const WebSocket = require('ws');
-  const ws = new WebSocket('ws://127.0.0.1:3002/ws');
+  const ws = new WebSocket('ws://127.0.0.1:10000/birddrop/ws');
   const messages = [];
   
   ws.on('open', () => {
