@@ -2,6 +2,22 @@ const express = require("express");
 const http = require("http");
 const { createProxyMiddleware, responseInterceptor } = require("http-proxy-middleware");
 
+const memLogs = [];
+const origLog = console.log;
+const origErr = console.error;
+console.log = (...args) => {
+  const line = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+  memLogs.push(`[LOG] ${line}`);
+  if (memLogs.length > 500) memLogs.shift();
+  origLog(...args);
+};
+console.error = (...args) => {
+  const line = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+  memLogs.push(`[ERR] ${line}`);
+  if (memLogs.length > 500) memLogs.shift();
+  origErr(...args);
+};
+
 const app = express();
 const PORT = process.env.PORT || 10000;
 
@@ -93,6 +109,18 @@ for (const svc of services) {
         // For WebSockets, 'res' is the socket
         res.destroy();
       }
+    },
+    onProxyReqWs: (proxyReq, req, socket) => {
+      if (svc.name === 'birddrop') {
+        socket.on('data', (chunk) => console.log(`[proxy] BD Client->Server: ${chunk.length} bytes`));
+        proxyReq.on('response', (res) => {
+          console.log(`[proxy] BD proxyReq response: ${res.statusCode}`);
+        });
+        proxyReq.on('upgrade', (proxyRes, proxySocket, proxyHead) => {
+          console.log(`[proxy] BD Upstream accepted upgrade`);
+          proxySocket.on('data', (chunk) => console.log(`[proxy] BD Server->Client: ${chunk.length} bytes`));
+        });
+      }
     }
   };
 
@@ -147,6 +175,10 @@ for (const svc of services) {
   app.use(svc.path, proxy);
   proxyMiddlewares.push({ path: svc.path, proxy });
 }
+
+app.get('/debug-logs', (req, res) => {
+  res.json(memLogs);
+});
 
 // Catch-all to see what is slipping past the proxies
 app.use((req, res) => {
