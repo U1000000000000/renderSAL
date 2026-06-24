@@ -32,6 +32,37 @@ app.get("/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
+// ─── WebSocket Upstream/Downstream Sync & Agent Config ───────────────────────
+// CRITICAL: By default, http-proxy uses http.globalAgent (keepAlive: true in modern Node).
+// When a WebSocket disconnects, http-proxy ends the upstream socket but does not destroy it.
+// This causes zombie keep-alive sockets to accumulate in http.globalAgent, permanently
+// breaking or hanging all subsequent WebSocket upgrade attempts (e.g. second try fails).
+// We set agent: false to guarantee a fresh, unpooled TCP socket for every connection,
+// and actively destroy both upstream and downstream sockets on any disconnect/error.
+
+function handleProxyReqWs(proxyReq, req, socket) {
+  function cleanupProxyReq() {
+    if (!proxyReq.destroyed) proxyReq.destroy();
+  }
+  socket.on('error', cleanupProxyReq);
+  socket.on('close', cleanupProxyReq);
+
+  proxyReq.on('upgrade', (proxyRes, proxySocket, proxyHead) => {
+    function cleanupUpstream() {
+      if (!proxySocket.destroyed) proxySocket.destroy();
+    }
+    function cleanupDownstream() {
+      if (!socket.destroyed) socket.destroy();
+    }
+
+    socket.on('error', cleanupUpstream);
+    socket.on('close', cleanupUpstream);
+
+    proxySocket.on('error', cleanupDownstream);
+    proxySocket.on('close', cleanupDownstream);
+  });
+}
+
 // ─── Root — quick index so you know what's running ───────────────────────────
 app.get("/", (req, res) => {
   res.json({
@@ -57,6 +88,7 @@ const socketIoProxy = createProxyMiddleware({
   target: "http://127.0.0.1:3001",
   changeOrigin: true,
   ws: true,
+  agent: false, // Prevent globalAgent socket pooling corruption
   // No pathRewrite — keep /socket.io/ as-is for the backend
   logLevel: "warn",
   onError: (err, req, res) => {
@@ -69,6 +101,7 @@ const socketIoProxy = createProxyMiddleware({
       res.destroy();
     }
   },
+  onProxyReqWs: handleProxyReqWs,
 });
 app.use("/socket.io", socketIoProxy);
 
@@ -95,6 +128,7 @@ for (const svc of services) {
   let proxyOptions = {
     target: `http://127.0.0.1:${svc.port}`,
     changeOrigin: true,
+    agent: false, // Prevent globalAgent socket pooling corruption
     pathRewrite: (path, req) => {
       const newPath = path.replace(new RegExp(`^${svc.path}`), "");
       return newPath === "" ? "/" : newPath;
@@ -110,18 +144,7 @@ for (const svc of services) {
         res.destroy();
       }
     },
-    onProxyReqWs: (proxyReq, req, socket) => {
-      if (svc.name === 'birddrop') {
-        socket.on('data', (chunk) => console.log(`[proxy] BD Client->Server: ${chunk.length} bytes`));
-        proxyReq.on('response', (res) => {
-          console.log(`[proxy] BD proxyReq response: ${res.statusCode}`);
-        });
-        proxyReq.on('upgrade', (proxyRes, proxySocket, proxyHead) => {
-          console.log(`[proxy] BD Upstream accepted upgrade`);
-          proxySocket.on('data', (chunk) => console.log(`[proxy] BD Server->Client: ${chunk.length} bytes`));
-        });
-      }
-    }
+    onProxyReqWs: handleProxyReqWs
   };
 
   if (svc.path === "/pollrabbit") {
