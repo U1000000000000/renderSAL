@@ -38,9 +38,14 @@ app.get("/health", (req, res) => {
 // This causes zombie keep-alive sockets to accumulate in http.globalAgent, permanently
 // breaking or hanging all subsequent WebSocket upgrade attempts (e.g. second try fails).
 // We set agent: false to guarantee a fresh, unpooled TCP socket for every connection,
-// and actively destroy both upstream and downstream sockets on any disconnect/error.
+// actively destroy both upstream and downstream sockets on any disconnect/error,
+// and enforce kernel-level TCP keep-alive to prevent silent firewall/NAT drops over days.
 
 function handleProxyReqWs(proxyReq, req, socket) {
+  if (socket && socket.setKeepAlive) {
+    socket.setKeepAlive(true, 15000);
+  }
+
   function cleanupProxyReq() {
     if (!proxyReq.destroyed) proxyReq.destroy();
   }
@@ -48,6 +53,10 @@ function handleProxyReqWs(proxyReq, req, socket) {
   socket.on('close', cleanupProxyReq);
 
   proxyReq.on('upgrade', (proxyRes, proxySocket, proxyHead) => {
+    if (proxySocket && proxySocket.setKeepAlive) {
+      proxySocket.setKeepAlive(true, 15000);
+    }
+
     function cleanupUpstream() {
       if (!proxySocket.destroyed) proxySocket.destroy();
     }
